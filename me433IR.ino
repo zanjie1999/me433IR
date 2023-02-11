@@ -13,7 +13,7 @@
 // 功能开关
 #define ME_IR_TO_433
 #define ME_433_TO_IR
-//#define ME_SG90
+#define ME_SG90
 #define ME_OTA
 
 // 红外配置 库默认的 14in 12out
@@ -27,9 +27,6 @@
 
 #include <IRremote.hpp>
 #include <RCSwitch.h>
-#ifdef ME_SG90
-#include <Servo.h>
-#endif
 #ifdef ME_OTA
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
@@ -67,10 +64,6 @@ RCSwitch send433 = RCSwitch();
 #endif
 RCSwitch recv433 = RCSwitch();
 #endif
-#ifdef ME_SG90
-Servo sg;
-unsigned long sgt = 0;
-#endif
 #ifdef ME_OTA
 ESP8266WebServer httpServer(80);
 ESP8266HTTPUpdateServer httpUpdater;
@@ -87,33 +80,37 @@ uint32_t getColor() {
 }
 
 #ifdef ME_SG90
+// 因为定时器冲突，手动实现这个逻辑
+void sgWrite(int deg) {
+    // sg90的实际工作范围500-2480 这样初始化才能到180度
+    int dms = (deg * 11) + 500;
+    digitalWrite(SG_PIN, HIGH);
+    delayMicroseconds(dms);
+    digitalWrite(SG_PIN, LOW);
+    delayMicroseconds(20000 - dms);
+}
+
 // 舵机开关灯
 void setOnOff(bool isOn) {
     onState = isOn;
-    // 启用输出舵机工作
-    if (sgt == 0) {
-      pinMode(SG_PIN, OUTPUT);
-      sgt = sgSlpT + millis();
-      delay(100);
-    }
     if (isOn) {
-        sg.write(stay2onDeg);
+        sgWrite(stay2onDeg);
         BUILTIN_SWITCH.print("on");
         BlinkerMIOT.powerState("on");
         BlinkerMIOT.print();
         delay(degT);
-        sg.write(onDeg);
+        sgWrite(onDeg);
         delay(degT);
-        sg.write(stay2offDeg);
+        sgWrite(stay2offDeg);
     } else {
-        sg.write(stay2offDeg);
+        sgWrite(stay2offDeg);
         BUILTIN_SWITCH.print("off");
         BlinkerMIOT.powerState("off");
         BlinkerMIOT.print();
         delay(degT);
-        sg.write(offDeg);
+        sgWrite(offDeg);
         delay(degT);
-        sg.write(stay2onDeg);
+        sgWrite(stay2onDeg);
     }
 }
 #endif
@@ -265,11 +262,7 @@ void setOnOffBtn(const String & state) {
 
 BlinkerSlider degSlider("ran-deg");
 void setDeg(int32_t value) {
-    if (sgt == 0) {
-      pinMode(SG_PIN, OUTPUT);
-      sgt = sgSlpT + millis();
-    }
-    sg.write(value);
+    sgWrite(value);
     Blinker.vibrate();
 }
 #endif
@@ -278,24 +271,32 @@ void setDeg(int32_t value) {
 BlinkerButton fanOnBtm("fan-on");
 void fanOn(const String & state) {
     send433.send(13990914, bitLength);
+    delay(500);
+    if (recv433.available()) recv433.resetAvailable();
 }
 
 // 风速减
 BlinkerButton fanMinBtm("fan-min");
 void fanMin(const String & state) {
     send433.send(13990926, bitLength);
+    delay(500);
+    if (recv433.available()) recv433.resetAvailable();
 }
 
 // 风速加
 BlinkerButton fanAddBtm("fan-add");
 void fanAdd(const String & state) {
     send433.send(13990924, bitLength);
+    delay(500);
+    if (recv433.available()) recv433.resetAvailable();
 }
 
 // 风扇摇头
 BlinkerButton fanShaBtm("fan-sha");
 void fanSha(const String & state) {
     send433.send(13990916, bitLength);
+    delay(500);
+    if (recv433.available()) recv433.resetAvailable();
 }
 #endif
 
@@ -305,18 +306,15 @@ void setup() {
     BLINKER_DEBUG.debugAll();
 
     pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(LED_BUILTIN, LOW);
 
     Blinker.begin(auth, ssid, pswd);
     Blinker.attachData(dataRead);
     Blinker.attachSummary(summary);
 
     #ifdef ME_SG90
-    // sg90的实际工作范围 这样初始化才能到180度
-    sg.attach(SG_PIN, 500, 2400);
-    sg.write(stay2offDeg);
-    delay(300);
-    pinMode(SG_PIN, INPUT);
+    pinMode(SG_PIN, OUTPUT);
+    sgWrite(stay2offDeg);
 
     BUILTIN_SWITCH.attach(setOnOffBtn);
     degSlider.attach(setDeg);
@@ -326,7 +324,6 @@ void setup() {
     send433.enableTransmit(SEND_433_PIN);
     send433.setPulseLength(pulseLength);
     IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
-    pinMode(IR_RECEIVE_PIN, INPUT_PULLUP);
 
     fanOnBtm.attach(fanOn);
     fanMinBtm.attach(fanMin);
@@ -354,6 +351,7 @@ void setup() {
     httpUpdater.setup(&httpServer);
     httpServer.begin();
     #endif
+    digitalWrite(LED_BUILTIN, HIGH);
 }
 
 void loop() {
@@ -363,6 +361,7 @@ void loop() {
     #endif
     #ifdef ME_433_TO_IR
     if (recv433.available()) {
+        digitalWrite(LED_BUILTIN, LOW);
 //        Serial.print("Decimal: ");
 //        Serial.print(recv433.getReceivedValue());
 //        Serial.print(" Bit: ");
@@ -378,26 +377,26 @@ void loop() {
         Blinker.print("Protocol", recv433.getReceivedProtocol());
         IrSender.sendNECRaw(recv433.getReceivedValue());
         recv433.resetAvailable();
+        delay(500);
         if (IrReceiver.decode()) IrReceiver.resume();
+        digitalWrite(LED_BUILTIN, HIGH);
     }
     #endif
     #ifdef ME_IR_TO_433
     if (IrReceiver.decode()) {
         IrReceiver.printIRResultShort(&Serial);
-        Blinker.print("Protocol", IrReceiver.decodedIRData.protocol);
-        Blinker.print("RawData", String(IrReceiver.decodedIRData.decodedRawData));
-        send433.send(IrReceiver.decodedIRData.decodedRawData, bitLength);
-        IrReceiver.resume();
-        if (recv433.available()) recv433.resetAvailable();
+        if (IrReceiver.decodedIRData.protocol == 0) {
+            IrReceiver.resume();
+        } else {
+            digitalWrite(LED_BUILTIN, LOW);
+            Blinker.print("Protocol", IrReceiver.decodedIRData.protocol);
+            Blinker.print("RawData", String(IrReceiver.decodedIRData.decodedRawData));
+            send433.send(IrReceiver.decodedIRData.decodedRawData, bitLength);
+            IrReceiver.resume();
+            delay(500);
+            if (recv433.available()) recv433.resetAvailable();
+            digitalWrite(LED_BUILTIN, HIGH);
+        }
     }
     #endif
-    #ifdef ME_SG90
-    if (sgt != 0 && sgt < millis()) {
-        // 关闭输出给舵机延寿 问就是已经烧了一个舵机的电机
-        delay(100);
-        pinMode(SG_PIN, INPUT);
-        sgt = 0;
-    }
-    #endif
-
 }
