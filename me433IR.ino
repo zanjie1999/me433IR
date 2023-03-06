@@ -13,7 +13,7 @@
 // 功能开关
 #define ME_IR_TO_433
 #define ME_433_TO_IR
-#define ME_SG90
+//#define ME_SG90
 #define ME_OTA
 
 // 红外配置 库默认的 14in 12out
@@ -113,18 +113,27 @@ void setOnOff(bool isOn) {
         sgWrite(stay2onDeg);
     }
 }
+#else
+// 射频灯开关
+void setOnOff(bool isOn) {
+    onState = isOn;
+    send433.send(13999999, bitLength);
+    BUILTIN_SWITCH.print(onState?"on":"off");
+    BlinkerMIOT.powerState(onState?"on":"off");
+    BlinkerMIOT.print();
+    delay(300);
+    if (recv433.available()) recv433.resetAvailable();
+}
 #endif
 
 // 小爱开关灯
 void miotPowerState(const String & state) {
     BLINKER_LOG("need set power state: ", state);
-    #ifdef ME_SG90
     if (state == BLINKER_CMD_ON) {
         setOnOff(true);
     } else if (state == BLINKER_CMD_OFF) {
         setOnOff(false);
     }
-    #endif
 }
 
 // 小爱设置颜色 可以判断颜色实现功能
@@ -253,25 +262,26 @@ String summary() {
 }
 
 // 按键定时器调用
-#ifdef ME_SG90
 // BUILTIN_SWITCH
 void setOnOffBtn(const String & state) {
     setOnOff(state == "on");
 //    Blinker.vibrate();
 }
 
+#ifdef ME_SG90
 BlinkerSlider degSlider("ran-deg");
 void setDeg(int32_t value) {
     sgWrite(value);
     Blinker.vibrate();
 }
 #endif
+
 #ifdef ME_IR_TO_433
 // 风扇开关
 BlinkerButton fanOnBtm("fan-on");
 void fanOn(const String & state) {
     send433.send(13990914, bitLength);
-    delay(500);
+    delay(300);
     if (recv433.available()) recv433.resetAvailable();
 }
 
@@ -279,7 +289,7 @@ void fanOn(const String & state) {
 BlinkerButton fanMinBtm("fan-min");
 void fanMin(const String & state) {
     send433.send(13990926, bitLength);
-    delay(500);
+    delay(300);
     if (recv433.available()) recv433.resetAvailable();
 }
 
@@ -287,7 +297,7 @@ void fanMin(const String & state) {
 BlinkerButton fanAddBtm("fan-add");
 void fanAdd(const String & state) {
     send433.send(13990924, bitLength);
-    delay(500);
+    delay(300);
     if (recv433.available()) recv433.resetAvailable();
 }
 
@@ -295,7 +305,7 @@ void fanAdd(const String & state) {
 BlinkerButton fanShaBtm("fan-sha");
 void fanSha(const String & state) {
     send433.send(13990916, bitLength);
-    delay(500);
+    delay(300);
     if (recv433.available()) recv433.resetAvailable();
 }
 #endif
@@ -315,10 +325,10 @@ void setup() {
     #ifdef ME_SG90
     pinMode(SG_PIN, OUTPUT);
     sgWrite(stay2offDeg);
-
-    BUILTIN_SWITCH.attach(setOnOffBtn);
     degSlider.attach(setDeg);
     #endif
+    
+    BUILTIN_SWITCH.attach(setOnOffBtn);
 
     #ifdef ME_IR_TO_433
     send433.enableTransmit(SEND_433_PIN);
@@ -377,7 +387,11 @@ void loop() {
         Blinker.print("Protocol", recv433.getReceivedProtocol());
         IrSender.sendNECRaw(recv433.getReceivedValue());
         recv433.resetAvailable();
-        delay(500);
+        delay(50);
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(300);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(100);
         if (IrReceiver.decode()) IrReceiver.resume();
         digitalWrite(LED_BUILTIN, HIGH);
     }
@@ -393,7 +407,7 @@ void loop() {
             Blinker.print("RawData", String(IrReceiver.decodedIRData.decodedRawData));
             send433.send(IrReceiver.decodedIRData.decodedRawData, bitLength);
             IrReceiver.resume();
-            delay(500);
+            delay(300);
             if (recv433.available()) recv433.resetAvailable();
             digitalWrite(LED_BUILTIN, HIGH);
         }
