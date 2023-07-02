@@ -156,9 +156,11 @@ void miotMode(uint8_t mode) {
 
     if (mode == BLINKER_CMD_MIOT_DAY) {
         // 日光
+        acOn("");
     }
     else if (mode == BLINKER_CMD_MIOT_NIGHT) {
         // 夜光
+        acOff("");
     }
     else if (mode == BLINKER_CMD_MIOT_COLOR) {
         // 彩光
@@ -246,14 +248,26 @@ void miotQuery(int32_t queryCode) {
     }
 }
 
+// app控制台输入的东西
 void dataRead(const String & data) {
     BLINKER_LOG("Blinker readString: ", data);
-
     // Blinker.vibrate();
+
+    if (data.length() > 0) {
+//        uint16_t rawData[data.length()];
+//        for (int i = 0; i < data.length(); i++) {
+//            rawData[i] = data.substring(i, i + 1).toInt();
+//        }
+//        IrSender.sendRaw(rawData ,data.length() ,38);
+
+        IrSender.sendNECRaw(strtoul(data.c_str(), NULL, 16));
+        
+        Blinker.print("sendIr");
+   }
     
     uint32_t BlinkerTime = millis();
-    
     Blinker.print("millis", BlinkerTime);
+    Blinker.print("data", data);
 }
 
 String summary() {
@@ -264,7 +278,7 @@ String summary() {
 // 按键定时器调用
 // BUILTIN_SWITCH
 void setOnOffBtn(const String & state) {
-    setOnOff(state == "on");
+    setOnOff(state == BLINKER_CMD_ON);
 //    Blinker.vibrate();
 }
 
@@ -308,6 +322,28 @@ void fanSha(const String & state) {
     delay(300);
     if (recv433.available()) recv433.resetAvailable();
 }
+
+// 开空调
+BlinkerButton acOnBtm("ac-on");
+void acOn(const String & state) {
+    IrSender.sendNECRaw(0x250200A39);
+}
+
+// 关空调
+BlinkerButton acOffBtm("ac-off");
+void acOff(const String & state) {
+    IrSender.sendNECRaw(0x250200A31);
+}
+
+// 投影
+BlinkerButton pjtBtm("pjt");
+void pjt(const String & state) {
+    if (state == "press") {
+        IrSender.sendNECRaw(0xb8471980);
+    } else if (state == "tap") {
+        IrSender.sendNECRaw(0xe51a1980);
+    }
+}
 #endif
 
 void setup() {
@@ -339,6 +375,9 @@ void setup() {
     fanMinBtm.attach(fanMin);
     fanAddBtm.attach(fanAdd);
     fanShaBtm.attach(fanSha);
+    acOnBtm.attach(acOn);
+    acOffBtm.attach(acOff);
+    pjtBtm.attach(pjt);
     #endif
 
     #ifdef ME_433_TO_IR
@@ -404,7 +443,7 @@ void loop() {
         } else {
             digitalWrite(LED_BUILTIN, LOW);
             Blinker.print("Protocol", IrReceiver.decodedIRData.protocol);
-            Blinker.print("RawData", String(IrReceiver.decodedIRData.decodedRawData));
+            Blinker.print("RawData", String(IrReceiver.decodedIRData.decodedRawData, HEX));
             send433.send(IrReceiver.decodedIRData.decodedRawData, bitLength);
             IrReceiver.resume();
             delay(300);
